@@ -1,0 +1,1252 @@
+<!DOCTYPE html>
+<html lang="en">
+<title>Bet Advisor</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="">
+<link rel="stylesheet" href="https://www.w3schools.com/w3css/4/w3.css">
+<link rel="stylesheet" href="">
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+
+<body style='background-color:white'>
+    <div class="w3-container" style="margin: auto; max-width: 800px;">
+
+        <h1 class="w3-center" id="title">Bet Advisor</h1>
+
+        <!-- Bet List -->
+        <h4 class="w3-center">Bets</h4>
+
+        <div class="w3-container" id="bet-container"></div>
+
+        <!-- Add Bet Button -->
+        <p class="w3-center">
+            <button onclick="addStraightBet()">New Bet</button>
+            <button onclick="addParlayBet()">New Parlay</button>
+        </p>
+
+
+        <!-- Analysis -->
+        <br>
+        <h4 class="w3-center">Analysis</h4>
+
+        <p class="w3-center">
+            <button onclick="computeAnalysis()">Calculate</button>
+        </p>
+
+        <div class="w3-container" id="analysis-container"></div>
+        <br><br>
+
+    </div>
+</body>
+
+
+<!-- PARAMETERS -->
+<script>
+    var sportsbookVig = 1.04;
+</script>
+
+
+<!-- DATA MANAGMENT -->
+<script>
+    var id_counter = 1;
+    var betData = {};
+
+
+    // render everything in bet data
+    var renderBets = function () {
+
+        $('#bet-container').empty();
+
+        for (const [id, data] of Object.entries(betData)) {
+
+            if (data.type == "straight") {
+
+                var statusColor = 'white';
+                if (data.status == 'hit') statusColor = '#DAF7A6';
+                else if (data.status == 'miss') statusColor = '#FFC1B1';
+
+                $("#bet-container").append(`
+                    <div id="bet-${id}" class="w3-border-top w3-border-bottom" style="background-color: ${statusColor}">
+                        <div style="margin-top: 10px; margin-bottom: 10px;">
+
+                            <div class="w3-center w3-small">Straight</div>
+
+                            <table class="w3-table">
+                                <tr>
+                                    <td style="vertical-align: middle;">Name:</td>
+                                    <td><input type="text" value="${data.name}" id="bet-${id}-name-input" onblur="persistChanges(event)" class="w3-input w3-border"></td>
+                                </tr>
+                                <tr>
+                                    <td style="vertical-align: middle;">Odds:</td>
+                                    <td><input type="text" value="${data.odds}" id="bet-${id}-odds-input" onblur="persistChanges(event)" class="w3-input w3-border"></td>
+                                </tr>
+                                <tr>
+                                    <td style="vertical-align: middle;">Wager:</td>
+                                    <td><input type="number" value="${data.wager}" id="bet-${id}-wager-input" onblur="persistChanges(event)" class="w3-input w3-border"></td>
+                                </tr>
+                                <tr id="bet-${id}-live-odds" style="display: none;">
+                                    <td style="vertical-align: middle;">Live Odds:</td>
+                                    <td><input type="text" value="${data.liveOdds}" id="bet-${id}-live-odds-input" onblur="persistChanges(event)" class="w3-input w3-border"></td>
+                                </tr>
+                                <tr id="bet-${id}-bonus" style="display: none;">
+                                    <td style="vertical-align: middle;">Bonus:</td>
+                                    <td><input type="number" value="${data.bonus}" id="bet-${id}-bonus-input" onblur="persistChanges(event)" class="w3-input w3-border"></td>
+                                </tr>
+                                <tr id="bet-${id}-hedge" style="display: none;">
+                                    <td style="vertical-align: middle;">Hedge:</td>
+                                    <td><input type="text" value="${data.hedge}" id="bet-${id}-hedge-input" onblur="persistChanges(event)" class="w3-input w3-border"></td>
+                                </tr>
+                                <tr id="bet-${id}-hammer" style="display: none;">
+                                    <td style="vertical-align: middle;">Hammer:</td>
+                                    <td><input type="text" value="${data.hammer}" id="bet-${id}-hammer-input" onblur="persistChanges(event)" class="w3-input w3-border"></td>
+                                </tr>
+                            </table>
+
+                            <p>
+                                <label id="bet-${id}-win">Win: $${computeWinnings(id)}</label>
+                                <button class="w3-right" onclick="$('#bet-${id}-menu').toggle()">···</button>
+                            </p>
+
+                            <div id="bet-${id}-menu" style="display: none;">
+                                <button onclick="toggleBetHit(${id})">Hit</button>
+                                <button onclick="toggleBetMiss(${id})">Miss</button>
+                                <button onclick="$('#bet-${id}-bonus').toggle()">Bonus</button>
+                                <button onclick="$('#bet-${id}-live-odds').toggle()">Live Odds</button>
+                                <button onclick="$('#bet-${id}-hedge').toggle()">Hedge</button>
+                                <button onclick="$('#bet-${id}-hammer').toggle()">Hammer</button>
+                                <button onclick="toggleBetPartial(${id})">Partial</button>
+                                <button onclick="deleteBet(${id})">Delete</button>
+                            </div>
+
+                        </div>
+                    </div>
+                `);
+
+                if (data.liveOdds != "") $(`#bet-${id}-live-odds`).show();
+                if (data.bonus != "") $(`#bet-${id}-bonus`).show();
+                if (data.hedge && data.hedge != "--") $(`#bet-${id}-hedge`).show();
+                if (data.hammer && data.hammer != "--") $(`#bet-${id}-hammer`).show();
+
+            }
+            else if (data.type == "parlay") {
+
+                var statusColor = 'white';
+                if (data.status == 'hit') statusColor = '#DAF7A6';
+                else if (data.status == 'miss') statusColor = '#FFC1B1';
+
+                // parlay total
+                $("#bet-container").append(`
+                <div id="bet-${id}" class="w3-border-top w3-border-bottom">
+                    <div style="margin-top: 10px; margin-bottom: 10px;">
+
+                        <div class="w3-center w3-small">Parlay</div>
+
+                        <div id="bet-${id}-legs"></div>
+
+                        <!-- add leg button -->
+                        <p class="w3-center">
+                            <button onclick="addLeg(${id})">Add Leg</button>
+                        </p>
+
+                        <!-- total parlay -->
+                        <div style="background-color: ${statusColor}">
+                            <div class="w3-center w3-small w3-margin-top">Total</div>
+                            <table class="w3-table">
+                                <tr>
+                                    <td style="vertical-align: middle;">Odds:</td>
+                                    <td><input type="text" value="${data.odds}" id="bet-${id}-odds-input" onblur="persistChanges(event)" class="w3-input w3-border"></td>
+                                </tr>
+                                <tr>
+                                    <td style="vertical-align: middle;">Wager:</td>
+                                    <td><input type="number" value="${data.wager}" id="bet-${id}-wager-input" onblur="persistChanges(event)" class="w3-input w3-border"></td>
+                                </tr>
+                                <tr id="bet-${id}-bonus" style="display: none;">
+                                    <td style="vertical-align: middle;">Bonus:</td>
+                                    <td><input type="number" value="${data.bonus}" id="bet-${id}-bonus-input" onblur="persistChanges(event)" class="w3-input w3-border"></td>
+                                </tr>
+                            </table>
+
+                            <p>
+                                <label id="bet-${id}-win">Win: $${computeWinnings(id)}</label>
+                                <button class="w3-right" onclick="$('#bet-${id}-menu').toggle()">···</button>
+                            </p>
+
+                            <div id="bet-${id}-menu" style="display: none;">
+                                <button onclick="toggleBetHit(${id})">Hit</button>
+                                <button onclick="toggleBetMiss(${id})">Miss</button>
+                                <button onclick="$('#bet-${id}-bonus').toggle()">Bonus</button>
+                                <button onclick="deleteBet(${id})">Delete</button>
+                            </div>
+                        <div>
+
+                    </div>
+                </div>
+            `);
+
+                // parlay legs
+                var num_legs = 1;
+                for (const [legID, legData] of Object.entries(data.bets)) {
+
+                    var legStatusColor = 'white';
+                    if (legData.status == 'hit') legStatusColor = '#DAF7A6';
+                    else if (legData.status == 'miss') legStatusColor = '#FFC1B1';
+
+                    $(`#bet-${id}-legs`).append(`
+                        <div id=bet-${legID} style="background-color: ${legStatusColor}">
+                            <div class="w3-center w3-small w3-margin-top">Leg ${num_legs}</div>
+
+                            <table class="w3-table">
+                                <tr>
+                                    <td style="vertical-align: middle;">Name:</td>
+                                    <td> <input value="${legData.name}" type="text" id="bet-${legID}-name-input" onblur="persistLegChanges(event, ${id})" class="w3-input w3-border"> </td>
+                                </tr>
+                                <tr>
+                                    <td style="vertical-align: middle;">Odds:</td>
+                                    <td><input value="${legData.odds}" type="text" id="bet-${legID}-odds-input" onblur="persistLegChanges(event, ${id})" class="w3-input w3-border"></td>
+                                </tr>
+                                <tr id="bet-${legID}-live-odds" style="display: none;">
+                                    <td style="vertical-align: middle;">Live Odds:</td>
+                                    <td><input value="${legData.liveOdds}" type="text" id="bet-${legID}-live-odds-input" onblur="persistLegChanges(event, ${id})" class="w3-input w3-border"></td>
+                                </tr>
+                                <tr id="bet-${legID}-hedge" style="display: none;">
+                                    <td style="vertical-align: middle;">Hedge:</td>
+                                    <td><input type="text" value="${legData.hedge}" id="bet-${legID}-hedge-input" onblur="persistLegChanges(event, ${id})" class="w3-input w3-border"></td>
+                                </tr>
+                                <tr id="bet-${legID}-hammer" style="display: none;">
+                                    <td style="vertical-align: middle;">Hammer:</td>
+                                    <td><input type="text" value="${legData.hammer}" id="bet-${legID}-hammer-input" onblur="persistLegChanges(event, ${id})" class="w3-input w3-border"></td>
+                                </tr>
+                            </table>
+
+                            <p>
+                                <label></label>
+                                <button class="w3-right" onclick="$('#bet-${legID}-menu').toggle()">···</button><br>
+                            </p>
+
+                            <div id="bet-${legID}-menu" style="display: none;">
+                                <button onclick="toggleLegHit(${id}, ${legID})">Hit</button>
+                                <button onclick="toggleLegMiss(${id}, ${legID})">Miss</button>
+                                <button onclick="$('#bet-${legID}-live-odds').toggle()">Live Odds</button>
+                                <button onclick="$('#bet-${legID}-hedge').toggle()">Hedge</button>
+                                <button onclick="$('#bet-${legID}-hammer').toggle()">Hammer</button>
+                                <button onclick="toggleLegPartial(${legID})">Partial</button>
+                                <button onclick="deleteLeg(${id}, ${legID})">Delete</button>
+                            </div>
+                        </div>
+                    `)
+                    num_legs++;
+                    if (legData.liveOdds != "") $(`#bet-${legID}-live-odds`).show();
+                    if (legData.hedge && legData.hedge != "--") $(`#bet-${legID}-hedge`).show();
+                    if (legData.hammer && legData.hammer != "--") $(`#bet-${legID}-hammer`).show();
+                };
+
+            }
+        }
+
+    }
+
+
+    // == ADDING ==
+    // add a new straight bet
+    var addStraightBet = function (id) {
+        betData[id_counter] = {
+            type: "straight",
+            id: id_counter,
+            name: "Bet " + (Object.keys(betData).length + 1),
+            odds: "+100",
+            wager: 0.00,
+            bonus: 0,
+            liveOdds: "",
+            status: "",
+            hedge: "",
+            hammer: "",
+            partial: false
+        }
+        id_counter++;
+        renderBets();
+    }
+
+
+    // add a new parlay
+    var addParlayBet = function (id) {
+        betData[id_counter] = {
+            type: "parlay",
+            bets: {},
+            id: id_counter,
+            odds: "+100",
+            wager: 0.00,
+            bonus: 0,
+            status: ""
+        }
+        id_counter++;
+        renderBets();
+    }
+
+
+    // add a leg to parlay
+    var addLeg = function (id) {
+        betData[id]['bets'][id_counter] = {
+            id: id_counter,
+            name: "Leg " + (Object.keys(betData[id]['bets']).length + 1),
+            odds: "+100",
+            liveOdds: "",
+            status: "",
+            hedge: "",
+            hammer: "",
+            partial: false
+        }
+        id_counter++;
+        renderBets();
+    }
+
+
+    // == DELETING ==
+    // delete bet
+    var deleteBet = function (id) {
+        delete betData[id];
+        renderBets();
+    }
+
+    // delete parlay leg
+    var deleteLeg = function (id, legID) {
+        delete betData[id]['bets'][legID];
+        renderBets();
+    }
+
+
+    // == HIT/MISS TOGGLE ==
+    // toggle bet hit
+    var toggleBetHit = function (id) {
+        if (betData[id]['status'] == 'hit') {
+            betData[id]['status'] = '';
+        } else {
+            betData[id]['status'] = 'hit';
+        }
+        renderBets();
+    }
+
+    // toggle leg hit
+    var toggleLegHit = function (id, legID) {
+        if (betData[id]['bets'][legID]['status'] == 'hit') {
+            betData[id]['bets'][legID]['status'] = '';
+        } else {
+            betData[id]['bets'][legID]['status'] = 'hit';
+        }
+        updateParlayStatus(id);
+        renderBets();
+    }
+
+    // toggle bet miss
+    var toggleBetMiss = function (id) {
+        if (betData[id]['status'] == 'miss') {
+            betData[id]['status'] = '';
+        } else {
+            betData[id]['status'] = 'miss';
+        }
+        renderBets();
+    }
+
+    // toggle leg miss
+    var toggleLegMiss = function (id, legID) {
+        if (betData[id]['bets'][legID]['status'] == 'miss') {
+            betData[id]['bets'][legID]['status'] = '';
+        } else {
+            betData[id]['bets'][legID]['status'] = 'miss';
+        }
+        updateParlayStatus(id);
+        renderBets();
+    }
+
+    // update parlay status
+    var updateParlayStatus = function (id) {
+        for (const [legID, legData] of Object.entries(betData[id]['bets'])) {
+            if (legData.status == 'miss') {
+                betData[id]['status'] = 'miss';
+                return;
+            }
+        }
+        betData[id]['status'] = '';
+    }
+
+    // partial toggle
+    var toggleBetPartial = function (id) {
+        betData[id]['partial'] = !betData[id]['partial'];
+        renderBets();
+    }
+
+    var toggleLegPartial = function (id, legID) {
+        betData[id]['bets'][legID] = !betData[id]['bets'][legID]['partial'];
+        renderBets();
+    }
+
+
+    // == COMPUTE WINNINGS ==
+    var computeWinnings = function (id) {
+        var odds = parseInt(betData[id]['odds']);
+        var wager = parseFloat(betData[id]['wager']);
+
+        if (isNaN(odds) || isNaN(wager)) return 0.00;
+        else if (odds > -100 && odds < 100) return 0.00;
+
+        if (odds >= 100) {
+            return (wager * (odds / 100)).toFixed(2);
+        } else {
+            return (wager * (100 / (-odds))).toFixed(2);
+        }
+    }
+
+
+
+    // == PERSIST CHANGES ==
+    var persistChanges = function (e) {
+        var e_data = e.target.id.split('-');
+        var id = parseInt(e_data[1]);
+        var field = e_data[2];
+        var value = e.target.value;
+
+        if (field == 'name') {
+            betData[id]['name'] = value;
+        } else if (field == 'odds') {
+            betData[id]['odds'] = value;
+            $(`#bet-${id}-win`).text(`Win: $${computeWinnings(id)}`);
+        } else if (field == 'wager') {
+            betData[id]['wager'] = value;
+            $(`#bet-${id}-win`).text(`Win: $${computeWinnings(id)}`);
+        } else if (field == 'live') {
+            betData[id]['liveOdds'] = value;
+        } else if (field == 'bonus') {
+            betData[id]['bonus'] = value;
+        } else if (field == 'hedge') {
+            betData[id]['hedge'] = value;
+        } else if (field == 'hammer') {
+            betData[id]['hammer'] = value;
+        }
+    }
+
+    var persistLegChanges = function (e, id) {
+        var e_data = e.target.id.split('-');
+        var leg_id = parseInt(e_data[1]);
+        var field = e_data[2];
+        var value = e.target.value;
+
+        if (field == 'name') {
+            betData[id]['bets'][leg_id]['name'] = value;
+        } else if (field == 'odds') {
+            betData[id]['bets'][leg_id]['odds'] = value;
+        } else if (field == 'wager') {
+            betData[id]['bets'][leg_id]['wager'] = value;
+        } else if (field == 'live') {
+            betData[id]['bets'][leg_id]['liveOdds'] = value;
+        } else if (field == 'hedge') {
+            betData[id]['bets'][leg_id]['hedge'] = value;
+        } else if (field == 'hammer') {
+            betData[id]['bets'][leg_id]['hammer'] = value;
+        }
+    }
+
+
+    renderBets();
+</script>
+
+<!-- ANALYSIS -->
+<script>
+
+    var getSign = function (x) {
+        if (x > 0) return '+'
+        else if (x < 0) return '-'
+        else return '';
+    }
+
+    var unionProbability = function (pA, pB, isA, isB, type, partial) {
+
+        pAnot = 1 - pA;
+        pBnot = 1 - pB;
+
+        pAuse = pA;
+        if (!isA) pAuse = pAnot;
+        pBuse = pB;
+        if (!isB) pBuse = pBnot;
+
+        // full
+        if (!partial) {
+            if (type == 'hedge') {
+                if (isA && isB) return 0;
+                else if (!isA && !isB) return 0;
+                else if (isA && !isB) return pA;
+                else if (!isA && isB) return pB;
+            }
+            else if (type == 'hammer') {
+                if (isA && isB) return Math.max(pA, pB);
+                else if (!isA && !isB) return Math.max(pAnot, pBnot);
+                else if (isA && !isB) return 0;
+                else if (!isA && isB) return 0;
+            }
+        }
+
+        // partial
+        else if (partial) {
+
+            // pointing opposite
+            if ((type == 'hedge' && isA == isB) || (type == 'hammer' && isA != isB)) {
+                if (pAuse + pBuse >= 1) return 0;
+                else return pAuse + pBuse - 1;
+            }
+
+            // pointing same
+            else if ((type == 'hedge' && isA != isB) || (type == 'hammer' && isA == isB)) {
+                return Math.min(pAuse, pBuse);
+            }
+
+        }
+
+        console.log('union error');
+        return;
+    }
+
+    var computeAnalysis = function () {
+
+        // === PARSING ===
+        // parsed data
+        var bets = {};
+        var parlays = {};
+        var names = {};
+
+        // gather all bets
+        for (const [id, data] of Object.entries(betData)) {
+
+            // straight bet
+            if (data.type == "straight") {
+
+                // add to name list
+                names[data['name']] = id;
+
+                // get odds, wager, winnings, bonus
+                var odds = parseInt(data['odds']);
+                var wager = parseFloat(data['wager']);
+                var winnings = 0.00;
+                if (isNaN(odds) || isNaN(wager)) winnings = 0.00;
+                else if (odds > -100 && odds < 100) winnings = 0.00;
+                else {
+                    if (odds >= 100) winnings = (wager * (odds / 100));
+                    else winnings = (wager * (100 / (-odds)));
+                }
+                var bonus = null;
+                if (data['bonus']) bonus = parseFloat(data['bonus'])
+                if (isNaN(bonus)) bonus = null;
+                var status = null;
+                if (data['status']) status = data['status'];
+
+                // calculate true probability
+                var bookProb = 100 / (100 + odds)
+                if (odds <= -100) bookProb = (-odds) / (100 + (-odds))
+                var prob = bookProb / sportsbookVig;
+
+                // get live probability
+                var liveProb = null;
+                if (data['liveOdds']) {
+                    if (data['liveOdds'].includes('%')) {
+                        // percentages
+                        var temp = parseFloat(data['liveOdds'].replace('%', ''));
+                        if (!isNaN(temp)) {
+                            liveProb = temp / 100;
+                        }
+                    } else {
+                        // book odds
+                        var liveOdds = parseFloat(data['liveOdds']);
+                        if (!isNaN(liveOdds) && liveOdds >= 100 || liveOdds <= -100) {
+                            var bookLiveProb = 100 / (100 + liveOdds)
+                            if (liveOdds <= -100) bookLiveProb = (-liveOdds) / (100 + (-liveOdds))
+                            liveProb = bookLiveProb / sportsbookVig;
+                        }
+                    }
+                }
+
+                // record data
+                bets[id] = {}
+                bets[id]['name'] = data['name']
+                bets[id]['type'] = 'straight'
+                bets[id]['odds'] = odds;
+                bets[id]['wager'] = wager;
+                bets[id]['profit'] = winnings;
+                bets[id]['prob'] = prob;
+                bets[id]['liveProb'] = liveProb;
+                bets[id]['bonus'] = bonus;
+                bets[id]['status'] = status;
+                bets[id]['partial'] = data['partial'];
+                bets[id]['hedges'] = [];
+                bets[id]['hammers'] = [];
+            }
+
+            else if (data.type == "parlay") {
+
+                // parlay total
+                // get odds, wager, winnings, bonus
+                var odds = parseInt(data['odds']);
+                var wager = parseFloat(data['wager']);
+                var winnings = 0.00;
+                if (isNaN(odds) || isNaN(wager)) winnings = 0.00;
+                else if (odds > -100 && odds < 100) winnings = 0.00;
+                else {
+                    if (odds >= 100) winnings = (wager * (odds / 100));
+                    else winnnings = (wager * (100 / (-odds)));
+                }
+                var bonus = null;
+                if (data['bonus']) bonus = parseFloat(data['bonus'])
+                if (isNaN(bonus)) bonus = null;
+                var status = null;
+                if (data['status']) status = data['status'];
+
+                // calculate true probability
+                var bookProb = 100 / (100 + odds)
+                if (odds <= -100) bookProb = (-odds) / (100 + (-odds))
+                var prob = bookProb / sportsbookVig;
+
+
+                // record data
+                parlays[id] = {}
+                parlays[id]['type'] = 'parlay'
+                parlays[id]['odds'] = odds;
+                parlays[id]['wager'] = wager;
+                parlays[id]['profit'] = winnings;
+                parlays[id]['prob'] = prob;
+                parlays[id]['bonus'] = bonus;
+                parlays[id]['status'] = status;
+                parlays[id]['legs'] = [];
+
+                for (const [legID, legData] of Object.entries(data.bets)) {
+                    parlays[id]['legs'].push(legID);
+                }
+
+
+                // parlay leg
+                for (const [legID, legData] of Object.entries(data.bets)) {
+
+                    // add to name list
+                    names[legData['name']] = legID;
+
+                    // get odds, wager, winnings, bonus
+                    var odds = parseInt(legData['odds']);
+                    var status = null;
+                    if (legData['status']) status = legData['status'];
+
+                    // calculate true probability
+                    var bookProb = 100 / (100 + odds)
+                    if (odds <= -100) bookProb = (-odds) / (100 + (-odds))
+                    var prob = bookProb / sportsbookVig;
+
+                    // get live probability
+                    var liveProb = null;
+                    if (legData['liveOdds']) {
+                        if (legData['liveOdds'].includes('%')) {
+                            // percentages
+                            var temp = parseFloat(legData['liveOdds'].replace('%', ''));
+                            if (!isNaN(temp)) {
+                                liveProb = temp / 100;
+                            }
+                        } else {
+                            // book odds
+                            var liveOdds = parseFloat(legData['liveOdds']);
+                            if (!isNaN(liveOdds) && liveOdds >= 100 || liveOdds <= -100) {
+                                var bookLiveProb = 100 / (100 + liveOdds)
+                                if (liveOdds <= -100) bookLiveProb = (-liveOdds) / (100 + (-liveOdds))
+                                liveProb = bookLiveProb / sportsbookVig;
+                            }
+                        }
+                    }
+
+                    // record data
+                    bets[legID] = {}
+                    bets[legID]['name'] = legData['name']
+                    bets[legID]['type'] = 'leg'
+                    bets[legID]['odds'] = odds;
+                    bets[legID]['prob'] = prob;
+                    bets[legID]['liveProb'] = liveProb;
+                    bets[legID]['status'] = status;
+                    bets[legID]['partial'] = legData['partial'];
+                    bets[legID]['hedges'] = [];
+                    bets[legID]['hammers'] = [];
+                }
+            }
+        }
+
+        // set hedges and hammers
+        for (const [id, data] of Object.entries(betData)) {
+            if (data.type == "straight") {
+                if (data['hedge'] && Object.keys(names).includes(data['hedge'])) {
+                    var betID = names[data['hedge']];
+                    if (!bets[betID]['hedges'].includes(id)) bets[betID]['hedges'].push(id);
+                    if (!bets[id]['hedges'].includes(betID)) bets[id]['hedges'].push(betID);
+                }
+                else if (data['hammer'] && Object.keys(names).includes(data['hammer'])) {
+                    var betID = names[data['hammer']];
+                    if (!bets[betID]['hammers'].includes(id)) bets[betID]['hammers'].push(id);
+                    if (!bets[id]['hammers'].includes(betID)) bets[id]['hammers'].push(betID);
+                }
+            }
+            else if (data.type == "parlay") {
+
+                for (const [legID, legData] of Object.entries(data.bets)) {
+                    if (data['hedge'] && Object.keys(names).includes(data['hedge'])) {
+                        var betID = names[legData['hedge']];
+                        if (!bets[betID]['hedges'].includes(legID)) bets[betID]['hedges'].push(legID);
+                        if (!bets[legID]['hedges'].includes(betID)) bets[id]['hedges'].push(betID);
+                    }
+                    else if (data['hammer'] && Object.keys(names).includes(data['hammer'])) {
+                        var betID = names[legData['hammer']];
+                        if (!bets[betID]['hammers'].includes(legID)) bets[betID]['hammers'].push(legID);
+                        if (!bets[id]['hammers'].includes(betID)) bets[legID]['hammers'].push(betID);
+                    }
+                }
+            }
+        }
+
+
+        // === ACTIVE PROBABILITY ==
+        // calculate active probabilities
+        for (const [id, data] of Object.entries(bets)) {
+
+            var activeProb = data['prob'];
+            if (data['status']) {
+                if (data['status'] == 'miss') activeProb = 0;
+                else if (data['status'] == 'hit') activeProb = 1.0;
+            }
+            else if (data['liveProb']) {
+                activeProb = liveProb;
+            }
+            bets[id]['activeProb'] = activeProb;
+
+        }
+
+        // adjust for hedges / hammers
+        for (const [id, data] of Object.entries(bets)) {
+
+            // hedges
+            for (const betID of data['hedges']) {
+
+                if (parseInt(id) > parseInt(betID)) {
+
+                    var partial = false;
+                    if (bets[id]['partial'] || bets[betID]['partial']) partial = true;
+
+                    // full hedge
+                    if (!partial) {
+
+                        // status given
+                        if (bets[id]['status'] || bets[betID]['status']) {
+                            if (bets[id]['status'] == bets[betID]['status']) {
+                                // contradiction
+                                bets[id]['activeProb'] = 0;
+                                bets[betID]['activeProb'] = 0;
+                                continue;
+                            }
+                            if (bets[id]['status']) {
+                                if (bets[id]['status'] == 'hit') bets[betID]['activeProb'] = 0;
+                                else if (bets[id]['status'] == 'miss') bets[betID]['activeProb'] = 1.0;
+                                continue;
+                            }
+                            if (bets[betID]['status']) {
+                                if (bets[betID]['status'] == 'hit') bets[id]['activeProb'] = 0;
+                                else if (bets[betID]['status'] == 'miss') bets[id]['activeProb'] = 1.0;
+                                continue;
+                            }
+                        }
+
+                        // live odds given
+                        if (bets[id]['liveProb'] || bets[betID]['liveOdds']) {
+                            if (bets[id]['liveProb']) {
+                                bets[betID]['activeProb'] = 1 - bets[id]['activeProb'];
+                                continue;
+                            } else {
+                                bets[id]['activeProb'] = 1 - bets[betID]['activeProb'];
+                                continue;
+                            }
+                        }
+
+                        // if nothing, use latest bet
+                        bets[betID]['activeProb'] = 1 - bets[id]['activeProb'];
+
+                    }
+
+                    // partial hedge
+                    else if (partial) {
+
+                        // status given
+                        if (bets[id]['status'] || bets[betID]['status']) {
+                            if (bets[id]['status'] && bets[betID]['status']) {
+                                continue;
+                            }
+                            if (bets[id]['status']) {
+                                var pB = bets[id]['prob'];
+                                if (bets[id]['liveProb']) pB = bets[id]['liveProb'];
+                                var pA = bets[betID]['activeProb'];
+
+                                if (bets[id]['status'] == 'hit') {
+                                    if (pA + pB <= 1) bets[betID]['activeProb'] = 0;
+                                    else bets[betID]['activeProb'] = (pA + pB - 1) / pB;
+                                    continue;
+                                } else if (bets[id]['status'] == 'miss') {
+                                    var pBnot = 1 - pB;
+                                    if (pBnot < pA) bets[betID]['activeProb'] = 1.0;
+                                    else bets[betID]['activeProb'] = pA / pBnot;
+                                    continue;
+                                }
+                            }
+                            if (bets[betID]['status']) {
+                                var pB = bets[betID]['prob'];
+                                if (bets[betID]['liveProb']) pB = bets[betID]['liveProb'];
+                                var pA = bets[id]['activeProb'];
+
+                                if (bets[betID]['status'] == 'hit') {
+                                    if (pA + pB <= 1) bets[id]['activeProb'] = 0;
+                                    else bets[id]['activeProb'] = (pA + pB - 1) / pB;
+                                    continue;
+                                } else if (bets[betID]['status'] == 'miss') {
+                                    var pBnot = 1 - pB;
+                                    if (pBnot < pA) bets[id]['activeProb'] = 1.0;
+                                    else bets[id]['activeProb'] = pA / pBnot;
+                                    continue;
+                                }
+                            }
+                        }
+
+                    }
+
+                }
+
+            }
+
+            // hammers
+            for (const betID of data['hammers']) {
+
+                if (parseInt(id) > parseInt(betID)) {
+
+                    var partial = false;
+                    if (bets[id]['partial'] || bets[betID]['partial']) partial = true;
+
+                    // full hammer
+                    if (!partial) {
+
+                        // status given
+                        if (bets[id]['status'] || bets[betID]['status']) {
+                            if (bets[id]['status'] != bets[betID]['status']) {
+                                // contradiction
+                                bets[id]['activeProb'] = 0;
+                                bets[betID]['activeProb'] = 0;
+                                continue;
+                            }
+                            if (bets[id]['status']) {
+                                if (bets[id]['status'] == 'hit') bets[betID]['activeProb'] = 1.0;
+                                else if (bets[id]['status'] == 'miss') bets[betID]['activeProb'] = 0;
+                                continue;
+                            }
+                            if (bets[betID]['status']) {
+                                if (bets[betID]['status'] == 'hit') bets[id]['activeProb'] = 1.0;
+                                else if (bets[betID]['status'] == 'miss') bets[id]['activeProb'] = 0;
+                                continue;
+                            }
+                        }
+
+                        // live odds given
+                        if (bets[id]['liveProb'] || bets[betID]['liveOdds']) {
+                            if (bets[id]['liveProb']) {
+                                bets[betID]['activeProb'] = bets[id]['activeProb'];
+                                continue;
+                            } else {
+                                bets[id]['activeProb'] = bets[betID]['activeProb'];
+                                continue;
+                            }
+                        }
+
+                        // if nothing, use latest bet
+                        bets[betID]['activeProb'] = bets[id]['activeProb'];
+
+                    }
+
+                    // partial hammer
+                    else if (partial) {
+
+                        // status given
+                        if (bets[id]['status'] || bets[betID]['status']) {
+                            if (bets[id]['status'] && bets[betID]['status']) {
+                                continue;
+                            }
+                            if (bets[id]['status']) {
+                                var pB = bets[id]['prob'];
+                                if (bets[id]['liveProb']) pB = bets[id]['liveProb'];
+                                var pA = bets[betID]['activeProb'];
+
+                                if (bets[id]['status'] == 'miss') {
+                                    var pBnot = 1 - pB;
+                                    if (pA + pBnot <= 1) bets[betID]['activeProb'] = 0;
+                                    else bets[betID]['activeProb'] = (pA + pBnot - 1) / pBnot;
+                                    continue;
+                                } else if (bets[id]['status'] == 'hit') {
+                                    if (pB < pA) bets[betID]['activeProb'] = 1.0;
+                                    else bets[betID]['activeProb'] = pA / pB;
+                                    continue;
+                                }
+                            }
+                            if (bets[betID]['status']) {
+                                var pB = bets[betID]['prob'];
+                                if (bets[betID]['liveProb']) pB = bets[betID]['liveProb'];
+                                var pA = bets[id]['activeProb'];
+
+                                if (bets[betID]['status'] == 'miss') {
+                                    var pBnot = 1 - pB;
+                                    if (pA + pBnot <= 1) bets[id]['activeProb'] = 0;
+                                    else bets[id]['activeProb'] = (pA + pBnot - 1) / pBnot;
+                                    continue;
+                                } else if (bets[betID]['status'] == 'hit') {
+                                    if (pB < pA) bets[id]['activeProb'] = 1.0;
+                                    else bets[id]['activeProb'] = pA / pB;
+                                    continue;
+                                }
+                            }
+                        }
+
+                    }
+
+                }
+
+            }
+
+        }
+
+        // determine parlay active probabilities
+        for (const [id, data] of Object.entries(parlays)) {
+
+            // check given status
+            if (data['status']) {
+                if (data['status'] == 'hit') parlays[id]['activeProb'] = 1.0;
+                else if (data['status'] == 'miss') parlays[id]['activeProb'] = 0;
+                continue;
+            }
+
+            // check no legs
+            if (data['legs'].length == 0) {
+                parlays[id]['activeProb'] = data['prob'];
+                continue;
+            }
+
+            // check full hit or miss
+            var miss = false;
+            var allHit = true;
+            for (const legID of data['legs']) {
+                if (bets[legID]['status'] && bets[legID]['status'] == 'miss') {
+                    miss = true;
+                    allHit = false;
+                } else {
+                    allHit = false;
+                }
+            }
+            if (miss) {
+                parlays[id]['activeProb'] = 0;
+                continue;
+            } else if (allHit) {
+                parlays[id]['activeProb'] = 1.0;
+                continue;
+            }
+
+            // check leg updates
+            var legProbs = [];
+            var updated = false;
+            for (const legID of data['legs']) {
+                if (bets[legID]['liveProb'] || bets[legID]['status']) updated = true;
+                legProbs.push(bets[legID]['activeProb']);
+            }
+
+            var parlayProb = data['prob'];
+            var legProb = legProbs.reduce((a, b) => a * b);
+
+            if (updated && legProb > parlayProb) {
+                parlays[id]['activeProb'] = legProb;
+            }
+            else {
+                parlays[id]['activeProb'] = parlayProb;
+            }
+
+        }
+
+
+        // === SIMULATING ===
+        // group hits, misses, futures
+        var hits = [];
+        var misses = [];
+        var futures = [];
+
+        for (const [id, data] of Object.entries(bets)) {
+            if (data['status'] == 'miss' || data['activeProb'] < 0.0001) misses.push(id);
+            else if (data['status'] == 'hit' || data['activeProb'] > 0.9999) hits.push(id);
+            else futures.push(id);
+        }
+
+
+        // get all subsets of futures
+        var outcomeCombinations = futures.reduce(
+            (subsets, value) => subsets.concat(
+                subsets.map(set => [value, ...set])
+            ),
+            [[]]
+        );
+        var numCombinations = outcomeCombinations.length;
+
+        // iterate each scenario
+        var outcomeProbabilities = [];
+        var outcomeProfits = [];
+        var outcomeParlayHits = [];
+
+        for (const currentCombo of outcomeCombinations) {
+
+            var currentHits = currentCombo.concat(hits);
+
+            // compute probability
+            var currentProbability = 1;
+            var toProcess = Object.keys(bets).slice();
+            while (toProcess.length > 0) {
+                var id = toProcess.shift();
+
+                if (!futures.includes(id)) continue;
+
+                if (bets[id]['hedges'].length > 0) {
+                    for (const hedgeID of bets[id]['hedges']) {
+                        if (futures.includes(hedgeID)) {
+                            var prob = unionProbability(bets[id]['activeProb'],
+                                bets[hedgeID]['activeProb'],
+                                currentHits.includes(id),
+                                currentHits.includes(hedgeID),
+                                'hedge',
+                                bets[id]['partial'] || bets[hedgeID]['partial']);
+                            currentProbability *= prob;
+                            toProcess = toProcess.filter(x => x != hedgeID);
+                        }
+                    }
+                }
+                else if (bets[id]['hammers'].length > 0) {
+                    for (const hammerID of bets[id]['hammers']) {
+                        if (futures.includes(hammerID)) {
+                            var prob = unionProbability(bets[id]['activeProb'],
+                                bets[hammerID]['activeProb'],
+                                currentHits.includes(id),
+                                currentHits.includes(hammerID),
+                                'hammer',
+                                bets[id]['partial'] || bets[hammerID]['partial']);
+                            currentProbability *= prob;
+                            toProcess = toProcess.filter(x => x != hammerID);
+                        }
+                    }
+                }
+                else {
+                    if (currentCombo.includes(id)) currentProbability *= bets[id]['activeProb']
+                    else currentProbability *= (1 - bets[id]['activeProb']);
+                }
+            }
+            outcomeProbabilities.push(currentProbability);
+
+            // get parlay hits
+            var currentParlayHits = [];
+            for (const [id, data] of Object.entries(parlays)) {
+                var parlayIsHit = true;
+                for (const legID of data['legs']) {
+                    if (!currentHits.includes(legID)) {
+                        parlayIsHit = false;
+                        break;
+                    }
+                }
+                if (parlayIsHit) {
+                    currentParlayHits.push(id);
+                }
+            }
+            outcomeParlayHits.push(currentParlayHits);
+
+            // get profits
+            var currentProfit = 0;
+            for (const [id, data] of Object.entries(bets)) {
+                if (data['type'] == 'straight') {
+                    if (currentHits.includes(id)) {
+                        currentProfit += data['profit'];
+                    } else {
+                        currentProfit -= data['wager'];
+                        if (data['bonus']) currentProfit += data['bonus'];
+                    }
+                }
+            }
+            for (const [id, data] of Object.entries(parlays)) {
+                if (currentParlayHits.includes(id)) {
+                    currentProfit += data['profit'];
+                } else {
+                    currentProfit -= data['wager'];
+                    if (data['bonus']) currentProfit += data['bonus'];
+                }
+            }
+            outcomeProfits.push(currentProfit);
+
+        }
+
+
+
+        // scale probabilities
+        var probSum = outcomeProbabilities.reduce((a, b) => a + b, 0);
+        for (var i = 0; i < numCombinations; i++) {
+            outcomeProbabilities[i] = outcomeProbabilities[i] / probSum;
+        }
+
+        // scale with parlay probabilities
+        for (const [id, data] of Object.entries(parlays)) {
+            var hitIndexes = [];
+            var missIndexes = [];
+            var hitProb = 0;
+            var missProb = 0;
+            for (var i = 0; i < numCombinations; i++) {
+                if (outcomeParlayHits[i].includes(id)) {
+                    hitIndexes.push(i);
+                    hitProb += outcomeProbabilities[i];
+                } else {
+                    missIndexes.push(i);
+                    missProb += outcomeProbabilities[i];
+                }
+            }
+
+            var expHitProb = data['activeProb'];
+            var expMissProb = 1 - expHitProb;
+            for (var idx of hitIndexes) {
+                var curr = outcomeProbabilities[idx];
+                outcomeProbabilities[idx] = (curr / hitProb) * expHitProb;
+            }
+            for (var idx of missIndexes) {
+                var curr = outcomeProbabilities[idx];
+                outcomeProbabilities[idx] = (curr / missProb) * expMissProb;
+            }
+        }
+
+
+        // === RESULTS ===
+        var expectedProfit = 0;
+        for (var i = 0; i < numCombinations; i++) {
+            expectedProfit += outcomeProfits[i] * outcomeProbabilities[i];
+        }
+
+        var binThresh = 0.10;
+        var profitHist = {};
+        for (var i = 0; i < numCombinations; i++) {
+            if (outcomeProbabilities[i] < 0.001) continue;
+            var isSet = false;
+            for (const key of Object.keys(profitHist)) {
+                var p = parseFloat(key);
+                if (outcomeProfits[i] >= p - binThresh && outcomeProfits[i] <= p + binThresh) {
+                    profitHist[key] += outcomeProbabilities[i];
+                    isSet = true;
+                    break;
+                }
+            }
+            if (!isSet) profitHist[outcomeProfits[i].toFixed(2)] = outcomeProbabilities[i];
+        }
+        var validProfits = Object.keys(profitHist).map(
+            p => parseFloat(p)
+        );
+        var minProfit = Math.min.apply(Math, validProfits);
+        var maxProfit = Math.max.apply(Math, validProfits);
+
+
+        // === SHOW OUTPUT ===
+        $('#analysis-container').empty();
+
+        // bet table
+        $('#analysis-container').append(`
+            <div class="w3-container">
+                <h5>Your Bets</h5>
+                <table id="bets-table" class="w3-table w3-border"></table>
+            </div>
+        `);
+
+        for (const [id, data] of Object.entries(bets)) {
+            if (data['type'] == 'straight') {
+                $('#bets-table').append(`
+                    <tr>
+                        <td>${data['name']}</td>
+                        <td>$${(data['profit']).toFixed(2)}</td>
+                        <td>${(data['activeProb'] * 100).toFixed(1)}%</td>
+                    </tr>
+                `);
+            }
+        }
+        var parlayCnt = 1;
+        for (const [id, data] of Object.entries(parlays)) {
+            $('#bets-table').append(`
+                <tr>
+                    <td>Parlay ${parlayCnt} (${data['legs'].length} leg)</td>
+                    <td>$${(data['profit']).toFixed(2)}</td>
+                    <td>${(data['activeProb'] * 100).toFixed(1)}%</td>
+                </tr>
+            `);
+            parlayCnt++;
+        }
+
+
+        // expected, max/min profit
+        $('#analysis-container').append(`
+            <div class="w3-container">
+                <h5>Overview</h5>
+                <table class="w3-table w3-border">
+                    <tr>
+                        <td>Expected Profit</td>
+                        <th>${getSign(expectedProfit)}$${Math.abs(expectedProfit).toFixed(2)}</th>
+                    </tr>
+                    <tr>
+                        <td>Minimum</td>
+                        <td>${getSign(minProfit)}$${Math.abs(minProfit).toFixed(2)}</td>
+                    </tr>
+                    <tr>
+                        <td>Maximum</td>
+                        <td>${getSign(maxProfit)}$${Math.abs(maxProfit).toFixed(2)}</td>
+                    </tr>
+                </table>
+                <p style="margin-left: 16px;">
+                    
+                </p>
+            </div>
+        `);
+
+
+        // profit chances
+        $('#analysis-container').append(`
+            <div class="w3-container">
+                <h5>Profit Chances</h5>
+                <table id="profit-table" class="w3-table w3-border"></table>
+            </div>
+        `);
+
+        var keys = Object.keys(profitHist).map(
+            p => parseFloat(p)
+        );
+        keys = keys.sort();
+        var keyOrder = keys.map(
+            p => p.toFixed(2)
+        );
+        for (const profit of keyOrder) {
+            var value = parseFloat(profit);
+            $('#profit-table').append(`
+                <tr>
+                    <td>${getSign(value)}$${Math.abs(value).toFixed(2)}</td>
+                    <td>${(parseFloat(profitHist[profit]) * 100).toFixed(1)}%</td>
+                </tr>
+            `);
+        }
+
+
+
+
+        console.log('combos', outcomeCombinations);
+        console.log('probs', outcomeProbabilities);
+        console.log('profits', outcomeProfits);
+        console.log('exp profit', expectedProfit);
+        console.log('profit hist', profitHist);
+
+        // console.log('bets', bets);
+        // console.log('parlays', parlays);
+    }
+
+</script>
+
+
+
+</html>
